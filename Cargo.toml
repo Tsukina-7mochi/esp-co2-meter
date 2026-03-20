@@ -1,7 +1,7 @@
 [package]
 edition      = "2024"
 name         = "co2-meter"
-rust-version = "1.88"
+rust-version = "1.94"
 version      = "0.1.0"
 
 [[bin]]
@@ -9,12 +9,17 @@ name = "co2-meter"
 path = "./src/main.rs"
 
 [dependencies]
-esp-hal = { version = "~1.0", features = ["esp32c3"] }
-
-
-esp-bootloader-esp-idf = { version = "0.4.0", features = ["esp32c3"] }
-
 critical-section = "1.2.0"
+embedded-graphics = "0.8.2"
+embedded-hal = "1.0.0"
+embedded-hal-bus = "0.3.0"
+esp-bootloader-esp-idf = { version = "0.4.0", features = ["esp32c3"] }
+esp-hal = { version = "~1.0", features = ["esp32c3", "unstable"] }
+esp-println = { version = "0.16.1", features = ["esp32c3", "auto"] }
+itoa = "1.0.17"
+scd4x = "0.4.1"
+ssd1306 = "0.10.0"
+tinybmp = "0.7.0"
 
 
 [profile.dev]
