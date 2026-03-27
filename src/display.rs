@@ -1,8 +1,9 @@
+use embedded_graphics::pixelcolor::raw::BigEndian;
 use embedded_graphics::{
     framebuffer::{Framebuffer, buffer_size},
     image::Image,
     mono_font::{self, MonoTextStyle},
-    pixelcolor::{BinaryColor, raw::LittleEndian},
+    pixelcolor::BinaryColor,
     prelude::*,
     primitives::Rectangle,
     text::{Alignment, Baseline, Text, TextStyleBuilder},
@@ -48,7 +49,7 @@ where
         let mut frame_buf = Framebuffer::<
             BinaryColor,
             _,
-            LittleEndian,
+            BigEndian,
             128,
             64,
             { buffer_size::<BinaryColor>(128, 64) },
