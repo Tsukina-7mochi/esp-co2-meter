@@ -274,6 +274,8 @@ where
             )
             .draw_styled(&rect_style, &mut self.display)
             .unwrap();
+
+            prev_value = value;
         }
     }
 }
