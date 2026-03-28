@@ -149,6 +149,7 @@ fn main() -> ! {
 
     let mut display = Display::new(RefCellDevice::new(&i2c));
     display.init();
+    display.toggle_on_with_initialization_message();
 
     let mut measurement: Option<SensorData> = None;
     loop {
@@ -157,7 +158,7 @@ fn main() -> ! {
 
         if get_and_clear_isr_flag(&IS_GPIO_ISR) {
             if let Some(measurement) = measurement.as_ref() {
-                display.toggle_on_with(measurement);
+                display.toggle_on_with_measurement(measurement);
                 critical_section::with(|cs| {
                     let mut button = ISR_SCREEN_TIMEOUT.borrow_ref_mut(cs);
                     if let Some(button) = button.as_mut() {
@@ -169,6 +170,7 @@ fn main() -> ! {
         if get_and_clear_isr_flag(&IS_SENSOR_TIMER_ISR) {
             if sensor.data_ready_status().is_ok_and(|x| x) {
                 measurement = Some(sensor.measurement().unwrap());
+                display.toggle_off();
             }
         }
         if get_and_clear_isr_flag(&IS_SCREEN_TIMEOUT_ISR) {

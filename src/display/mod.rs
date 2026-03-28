@@ -63,8 +63,14 @@ where
         self.display.set_display_on(false).unwrap();
     }
 
-    pub fn toggle_on_with(&mut self, measurement: &SensorData) {
-        self.draw(measurement);
+    pub fn toggle_on_with_initialization_message(&mut self) {
+        self.draw_initialization_message();
+        self.display.flush().unwrap();
+        self.display.set_display_on(true).unwrap();
+    }
+
+    pub fn toggle_on_with_measurement(&mut self, measurement: &SensorData) {
+        self.draw_bar_chart(measurement);
         self.display.flush().unwrap();
         self.display.set_display_on(true).unwrap();
     }
@@ -73,7 +79,25 @@ where
         self.display.set_display_on(false).unwrap();
     }
 
-    fn draw(&mut self, measurement: &SensorData) {
+    fn draw_initialization_message(&mut self) {
+        let char_style = MonoTextStyle::new(&mono_font::ascii::FONT_6X10, BinaryColor::On);
+        let text_style = TextStyleBuilder::new()
+            .alignment(Alignment::Center)
+            .baseline(Baseline::Middle)
+            .build();
+        let bounds = self.display.bounding_box();
+
+        Text::with_text_style(
+            "Initializing...",
+            bounds.top_left + bounds.size / 2,
+            char_style,
+            text_style,
+        )
+        .draw(&mut self.display)
+        .unwrap();
+    }
+
+    fn draw_bar_chart(&mut self, measurement: &SensorData) {
         let mut frame_buf = MyFrameBuffer::new();
 
         let screen_img = include_bytes!("../img/screen.bmp");
