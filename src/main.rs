@@ -173,7 +173,7 @@ fn main() -> ! {
     display.init();
     display.toggle_on_with_initialization_message();
 
-    let mut app_state = AppState::Idle;
+    let mut app_state = AppState::Initializing;
 
     const CO2_HISTORY_INTERVAL: usize = 12;
     let mut co2_history = RingBuffer::<u16, 120>::new();
