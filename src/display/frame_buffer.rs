@@ -1,9 +1,10 @@
 use embedded_graphics::framebuffer::{buffer_size, Framebuffer};
-use embedded_graphics::pixelcolor::BinaryColor;
 use embedded_graphics::pixelcolor::raw::{BigEndian, RawU1};
+use embedded_graphics::pixelcolor::BinaryColor;
 use embedded_graphics::primitives::Rectangle;
 
-pub type MyFrameBuffer = Framebuffer<BinaryColor, RawU1, BigEndian, 128, 64, { buffer_size::<BinaryColor>(128, 64) }>;
+pub type MyFrameBuffer =
+Framebuffer<BinaryColor, RawU1, BigEndian, 128, 64, { buffer_size::<BinaryColor>(128, 64) }>;
 
 pub trait Invertible {
     fn invert_rect(&mut self, rect: Rectangle);
@@ -23,6 +24,5 @@ impl Invertible for MyFrameBuffer {
                 buf[(y * 16 + i) as usize] ^= (mask >> (15 - i) * 8) as u8;
             }
         }
-
     }
 }
