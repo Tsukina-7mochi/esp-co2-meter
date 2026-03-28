@@ -1,6 +1,6 @@
-use embedded_graphics::pixelcolor::raw::BigEndian;
+mod frame_buffer;
+
 use embedded_graphics::{
-    framebuffer::{Framebuffer, buffer_size},
     image::Image,
     mono_font::{self, MonoTextStyle},
     pixelcolor::BinaryColor,
@@ -8,9 +8,12 @@ use embedded_graphics::{
     primitives::Rectangle,
     text::{Alignment, Baseline, Text, TextStyleBuilder},
 };
+use embedded_graphics::geometry::AnchorX;
 use scd4x::types::SensorData;
-use ssd1306::{I2CDisplayInterface, Ssd1306, mode::BufferedGraphicsMode, prelude::*};
+use ssd1306::{mode::BufferedGraphicsMode, prelude::*, I2CDisplayInterface, Ssd1306};
 use tinybmp::Bmp;
+use frame_buffer::MyFrameBuffer;
+use crate::display::frame_buffer::Invertible;
 
 type PhysicalDisplay<I> =
     Ssd1306<I2CInterface<I>, DisplaySize128x64, BufferedGraphicsMode<DisplaySize128x64>>;
@@ -46,16 +49,9 @@ where
     }
 
     fn draw(&mut self, measurement: &SensorData) {
-        let mut frame_buf = Framebuffer::<
-            BinaryColor,
-            _,
-            BigEndian,
-            128,
-            64,
-            { buffer_size::<BinaryColor>(128, 64) },
-        >::new();
+        let mut frame_buf = MyFrameBuffer::new();
 
-        let screen_img = include_bytes!("img/screen.bmp");
+        let screen_img = include_bytes!("../img/screen.bmp");
         let screen_img = Bmp::<BinaryColor>::from_slice(screen_img).unwrap();
         Image::new(&screen_img, Point::zero())
             .draw(&mut frame_buf)
@@ -105,33 +101,10 @@ where
         let rh_width = rh_width.clamp(0, rh_area.size.width);
         let co2_width = co2_width.clamp(0, co2_area.size.width);
 
-        let frame_data = frame_buf.data_mut();
-
-        let mask = Self::create_mask(tmp_width, tmp_area.size.width, 2);
-        for y in tmp_area.rows() {
-            for i in 0..16 {
-                frame_data[(y * 16 + i) as usize] ^= (mask >> (15 - i) * 8) as u8;
-            }
-        }
-
-        let mask = Self::create_mask(rh_width, rh_area.size.width, 2);
-        for y in rh_area.rows() {
-            for i in 0..16 {
-                frame_data[(y * 16 + i) as usize] ^= (mask >> (15 - i) * 8) as u8;
-            }
-        }
-
-        let mask = Self::create_mask(co2_width, co2_area.size.width, 2);
-        for y in co2_area.rows() {
-            for i in 0..16 {
-                frame_data[(y * 16 + i) as usize] ^= (mask >> (15 - i) * 8) as u8;
-            }
-        }
+        frame_buf.invert_rect(tmp_area.resized_width(tmp_width, AnchorX::Left));
+        frame_buf.invert_rect(rh_area.resized_width(rh_width, AnchorX::Left));
+        frame_buf.invert_rect(co2_area.resized_width(co2_width, AnchorX::Left));
 
         frame_buf.as_image().draw(&mut self.display).unwrap();
-    }
-
-    fn create_mask(size: u32, width: u32, offset: u32) -> u128 {
-        !((!0u128) << size) << (width - size + offset)
     }
 }

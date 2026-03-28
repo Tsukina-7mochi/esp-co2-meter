@@ -20,7 +20,7 @@ use esp_hal::i2c::master::{self as i2c_master, I2c};
 use esp_hal::time::Duration;
 use esp_hal::timer::timg::TimerGroup;
 use esp_hal::timer::{OneShotTimer, PeriodicTimer};
-use esp_hal::{Blocking, handler, main};
+use esp_hal::{handler, main, Blocking};
 use esp_println::println;
 use scd4x::Scd4x;
 use scd4x::types::SensorData;
