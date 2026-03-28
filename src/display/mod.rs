@@ -1,5 +1,7 @@
 mod frame_buffer;
 
+use crate::display::frame_buffer::Invertible;
+use embedded_graphics::geometry::AnchorX;
 use embedded_graphics::{
     image::Image,
     mono_font::{self, MonoTextStyle},
@@ -8,15 +10,38 @@ use embedded_graphics::{
     primitives::Rectangle,
     text::{Alignment, Baseline, Text, TextStyleBuilder},
 };
-use embedded_graphics::geometry::AnchorX;
-use scd4x::types::SensorData;
-use ssd1306::{mode::BufferedGraphicsMode, prelude::*, I2CDisplayInterface, Ssd1306};
-use tinybmp::Bmp;
 use frame_buffer::MyFrameBuffer;
-use crate::display::frame_buffer::Invertible;
+use scd4x::types::SensorData;
+use ssd1306::{I2CDisplayInterface, Ssd1306, mode::BufferedGraphicsMode, prelude::*};
+use tinybmp::Bmp;
 
 type PhysicalDisplay<I> =
     Ssd1306<I2CInterface<I>, DisplaySize128x64, BufferedGraphicsMode<DisplaySize128x64>>;
+
+struct BarChart<T> {
+    min: T,
+    max: T,
+    value: T,
+    rect: Rectangle,
+}
+
+impl<T> BarChart<T> {
+    fn text_top_right(&self) -> Point {
+        self.rect.top_left + Point::new((self.rect.size.width as i32) - 2, -1)
+    }
+
+    fn bar_rect(&self) -> Rectangle
+    where
+        T: Clone + Into<f32>,
+    {
+        let min = self.min.clone().into();
+        let max = self.max.clone().into();
+        let value = self.value.clone().into();
+        let ratio = (value - min) / (max - min);
+        let width = ((self.rect.size.width as f32) * ratio) as u32;
+        self.rect.resized_width(width, AnchorX::Left)
+    }
+}
 
 pub struct Display<I> {
     display: PhysicalDisplay<I>,
@@ -57,6 +82,25 @@ where
             .draw(&mut frame_buf)
             .unwrap();
 
+        let tmp_chart = BarChart {
+            min: 13.0,
+            max: 33.0,
+            value: measurement.temperature,
+            rect: Rectangle::new(Point::new(2, 2), Size::new(124, 16)),
+        };
+        let rh_chart = BarChart {
+            min: 0.0,
+            max: 100.0,
+            value: measurement.humidity,
+            rect: Rectangle::new(Point::new(2, 24), Size::new(124, 16)),
+        };
+        let co2_chart = BarChart {
+            min: 0,
+            max: 2000,
+            value: measurement.co2,
+            rect: Rectangle::new(Point::new(2, 46), Size::new(124, 16)),
+        };
+
         let char_style = MonoTextStyle::new(&mono_font::ascii::FONT_9X18_BOLD, BinaryColor::On);
         let text_style = TextStyleBuilder::new()
             .alignment(Alignment::Right)
@@ -65,45 +109,33 @@ where
 
         let mut itoa_buf = itoa::Buffer::new();
         Text::with_text_style(
-            itoa_buf.format(measurement.temperature as u32),
-            Point::new(124, 1),
+            itoa_buf.format(tmp_chart.value as u32),
+            tmp_chart.text_top_right(),
             char_style,
             text_style,
         )
         .draw(&mut frame_buf)
         .unwrap();
         Text::with_text_style(
-            itoa_buf.format((measurement.humidity) as u32),
-            Point::new(124, 23),
+            itoa_buf.format(rh_chart.value as u32),
+            rh_chart.text_top_right(),
             char_style,
             text_style,
         )
         .draw(&mut frame_buf)
         .unwrap();
         Text::with_text_style(
-            itoa_buf.format(measurement.co2 as u32),
-            Point::new(124, 45),
+            itoa_buf.format(co2_chart.value as u32),
+            co2_chart.text_top_right(),
             char_style,
             text_style,
         )
         .draw(&mut frame_buf)
         .unwrap();
 
-        let tmp_area = Rectangle::new(Point::new(2, 2), Size::new(124, 16));
-        let rh_area = Rectangle::new(Point::new(2, 24), Size::new(124, 16));
-        let co2_area = Rectangle::new(Point::new(2, 46), Size::new(124, 16));
-
-        let tmp_width = tmp_area.size.width * ((measurement.temperature as u32) - 13) / 20;
-        let rh_width = ((rh_area.size.width as f32) * measurement.humidity / 100.0) as u32;
-        let co2_width = co2_area.size.width * (measurement.co2 as u32) / 2000;
-
-        let tmp_width = tmp_width.clamp(0, tmp_area.size.width);
-        let rh_width = rh_width.clamp(0, rh_area.size.width);
-        let co2_width = co2_width.clamp(0, co2_area.size.width);
-
-        frame_buf.invert_rect(tmp_area.resized_width(tmp_width, AnchorX::Left));
-        frame_buf.invert_rect(rh_area.resized_width(rh_width, AnchorX::Left));
-        frame_buf.invert_rect(co2_area.resized_width(co2_width, AnchorX::Left));
+        frame_buf.invert_rect(tmp_chart.bar_rect());
+        frame_buf.invert_rect(rh_chart.bar_rect());
+        frame_buf.invert_rect(co2_chart.bar_rect());
 
         frame_buf.as_image().draw(&mut self.display).unwrap();
     }
