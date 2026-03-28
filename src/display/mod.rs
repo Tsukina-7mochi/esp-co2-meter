@@ -1,7 +1,10 @@
 mod frame_buffer;
 
 use crate::display::frame_buffer::Invertible;
+use core::ops::Index;
 use embedded_graphics::geometry::AnchorX;
+use embedded_graphics::image::ImageRaw;
+use embedded_graphics::primitives::{Line, PrimitiveStyleBuilder, StyledDrawable};
 use embedded_graphics::{
     image::Image,
     mono_font::{self, MonoTextStyle},
@@ -12,11 +15,62 @@ use embedded_graphics::{
 };
 use frame_buffer::MyFrameBuffer;
 use scd4x::types::SensorData;
-use ssd1306::{I2CDisplayInterface, Ssd1306, mode::BufferedGraphicsMode, prelude::*};
+use ssd1306::{mode::BufferedGraphicsMode, prelude::*, I2CDisplayInterface, Ssd1306};
 use tinybmp::Bmp;
 
 type PhysicalDisplay<I> =
     Ssd1306<I2CInterface<I>, DisplaySize128x64, BufferedGraphicsMode<DisplaySize128x64>>;
+
+const IMG_0: ImageRaw<BinaryColor> = ImageRaw::new(
+    &[
+        0b_111_00000,
+        0b_101_00000,
+        0b_101_00000,
+        0b_101_00000,
+        0b_111_00000,
+    ],
+    3,
+);
+const IMG_1K: ImageRaw<BinaryColor> = ImageRaw::new(
+    &[
+        0b_010_0_101_0,
+        0b_010_0_110_0,
+        0b_010_0_100_0,
+        0b_010_0_110_0,
+        0b_010_0_101_0,
+    ],
+    7,
+);
+const IMG_2K: ImageRaw<BinaryColor> = ImageRaw::new(
+    &[
+        0b_111_0_101_0,
+        0b_001_0_110_0,
+        0b_111_0_100_0,
+        0b_100_0_110_0,
+        0b_111_0_101_0,
+    ],
+    7,
+);
+const IMG_1H: ImageRaw<BinaryColor> = ImageRaw::new(
+    &[
+        0b_010_0_101_0,
+        0b_010_0_101_0,
+        0b_010_0_111_0,
+        0b_010_0_101_0,
+        0b_010_0_101_0,
+    ],
+    7,
+);
+const IMG_2H: ImageRaw<BinaryColor> = ImageRaw::new(
+    &[
+        0b_111_0_101_0,
+        0b_001_0_101_0,
+        0b_111_0_111_0,
+        0b_100_0_101_0,
+        0b_111_0_101_0,
+    ],
+    7,
+);
 
 struct BarChart<T> {
     min: T,
@@ -64,13 +118,26 @@ where
     }
 
     pub fn toggle_on_with_initialization_message(&mut self) {
+        self.display.clear_buffer();
         self.draw_initialization_message();
         self.display.flush().unwrap();
         self.display.set_display_on(true).unwrap();
     }
 
     pub fn toggle_on_with_measurement(&mut self, measurement: &SensorData) {
+        self.display.clear_buffer();
         self.draw_bar_chart(measurement);
+        self.display.flush().unwrap();
+        self.display.set_display_on(true).unwrap();
+    }
+
+    pub fn toggle_on_with_history<T, U>(&mut self, history: &T)
+    where
+        T: Index<usize, Output = U>,
+        U: Clone + Into<i32>,
+    {
+        self.display.clear_buffer();
+        self.draw_line_chart(history);
         self.display.flush().unwrap();
         self.display.set_display_on(true).unwrap();
     }
@@ -162,5 +229,51 @@ where
         frame_buf.invert_rect(co2_chart.bar_rect());
 
         frame_buf.as_image().draw(&mut self.display).unwrap();
+    }
+
+    fn draw_line_chart<T, U>(&mut self, history: &T)
+    where
+        T: Index<usize, Output = U>,
+        U: Clone + Into<i32>,
+    {
+        let rect_style = PrimitiveStyleBuilder::new()
+            .stroke_width(1)
+            .stroke_color(BinaryColor::On)
+            .build();
+        Rectangle::new(Point::new(8, 0), Size::new(120, 56))
+            .draw_styled(&rect_style, &mut self.display)
+            .unwrap();
+
+        Image::new(&IMG_2K, Point::new(0, 0))
+            .draw(&mut self.display)
+            .unwrap();
+        Image::new(&IMG_1K, Point::new(0, 28))
+            .draw(&mut self.display)
+            .unwrap();
+        Image::new(&IMG_0, Point::new(4, 59))
+            .draw(&mut self.display)
+            .unwrap();
+        Image::new(&IMG_1H, Point::new(60, 59))
+            .draw(&mut self.display)
+            .unwrap();
+        Image::new(&IMG_2H, Point::new(121, 59))
+            .draw(&mut self.display)
+            .unwrap();
+
+        let mut prev_value = history[0].clone().into();
+        for i in 1..120 {
+            let prev_x = 8 + (i as i32) - 1;
+            let x = 8 + (i as i32);
+            let value = history[i].clone().into();
+
+            let prev_height = prev_value * 56 / 2000;
+            let height = value * 56 / 2000;
+            Line::new(
+                Point::new(prev_x, 56 - prev_height),
+                Point::new(x, 56 - height),
+            )
+            .draw_styled(&rect_style, &mut self.display)
+            .unwrap();
+        }
     }
 }

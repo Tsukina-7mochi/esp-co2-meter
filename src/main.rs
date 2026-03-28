@@ -8,9 +8,11 @@
 #![deny(clippy::large_stack_frames)]
 
 mod display;
+mod ring_buffer;
 
 use core::cell::RefCell;
 
+use crate::ring_buffer::RingBuffer;
 use critical_section::Mutex;
 use display::Display;
 use embedded_hal_bus::i2c::RefCellDevice;
@@ -23,7 +25,6 @@ use esp_hal::timer::{OneShotTimer, PeriodicTimer};
 use esp_hal::{handler, main, Blocking};
 use esp_println::println;
 use scd4x::Scd4x;
-use scd4x::types::SensorData;
 
 #[panic_handler]
 fn panic(e: &core::panic::PanicInfo) -> ! {
@@ -36,13 +37,16 @@ esp_bootloader_esp_idf::esp_app_desc!();
 static ISR_INPUT: Mutex<RefCell<Option<Input>>> = Mutex::new(RefCell::new(None));
 static ISR_SENSOR_TIMER: Mutex<RefCell<Option<PeriodicTimer<'static, Blocking>>>> =
     Mutex::new(RefCell::new(None));
-static ISR_SCREEN_TIMEOUT: Mutex<RefCell<Option<OneShotTimer<'static, Blocking>>>> =
+static ISR_APP_TIMER: Mutex<RefCell<Option<OneShotTimer<'static, Blocking>>>> =
     Mutex::new(RefCell::new(None));
 
 // use Mutex instead of AtomicBool because ESP32C3 does not support AtomicBool::swap
 static IS_GPIO_ISR: Mutex<RefCell<bool>> = Mutex::new(RefCell::new(false));
 static IS_SENSOR_TIMER_ISR: Mutex<RefCell<bool>> = Mutex::new(RefCell::new(false));
-static IS_SCREEN_TIMEOUT_ISR: Mutex<RefCell<bool>> = Mutex::new(RefCell::new(false));
+static IS_APP_TIMER_ISR: Mutex<RefCell<bool>> = Mutex::new(RefCell::new(false));
+
+const DEBOUNCE_TIMEOUT: Duration = Duration::from_millis(300);
+const SCREEN_TIMEOUT: Duration = Duration::from_millis(5000);
 
 fn get_and_clear_isr_flag(flag: &Mutex<RefCell<bool>>) -> bool {
     critical_section::with(|cs| {
@@ -51,6 +55,15 @@ fn get_and_clear_isr_flag(flag: &Mutex<RefCell<bool>>) -> bool {
         *flag = false;
         val
     })
+}
+
+fn schedule_app_timer(duration: Duration) {
+    critical_section::with(|cs| {
+        let mut timer = ISR_APP_TIMER.borrow_ref_mut(cs);
+        if let Some(timer) = timer.as_mut() {
+            timer.schedule(duration).unwrap();
+        }
+    });
 }
 
 #[handler]
@@ -87,15 +100,24 @@ fn sensor_timer_isr() {
 #[handler]
 fn button_timer_isr() {
     critical_section::with(|cs| {
-        let mut timer = ISR_SCREEN_TIMEOUT.borrow_ref_mut(cs);
+        let mut timer = ISR_APP_TIMER.borrow_ref_mut(cs);
         let Some(timer) = timer.as_mut() else {
             return;
         };
 
-        *IS_SCREEN_TIMEOUT_ISR.borrow_ref_mut(cs) = true;
+        *IS_APP_TIMER_ISR.borrow_ref_mut(cs) = true;
 
         timer.clear_interrupt();
     });
+}
+
+enum AppState {
+    Initializing,
+    Idle,
+    GeneralViewDebouncing,
+    GeneralView,
+    HistoryViewDebouncing,
+    HistoryView,
 }
 
 #[allow(
@@ -131,7 +153,7 @@ fn main() -> ! {
     button_timer.set_interrupt_handler(button_timer_isr);
     button_timer.listen();
     critical_section::with(|cs| {
-        ISR_SCREEN_TIMEOUT.borrow_ref_mut(cs).replace(button_timer);
+        ISR_APP_TIMER.borrow_ref_mut(cs).replace(button_timer);
     });
 
     let i2c_config = i2c_master::Config::default();
@@ -151,30 +173,76 @@ fn main() -> ! {
     display.init();
     display.toggle_on_with_initialization_message();
 
-    let mut measurement: Option<SensorData> = None;
+    let mut app_state = AppState::Idle;
+
+    const CO2_HISTORY_INTERVAL: usize = 12;
+    let mut co2_history = RingBuffer::<u16, 120>::new();
+    let mut co2_count = 0;
+    let mut co2_sum = 0;
+    let mut measurement = None;
+
     loop {
         // Wait for interruption
         unsafe { core::arch::asm!("wfi") }
 
         if get_and_clear_isr_flag(&IS_GPIO_ISR) {
-            if let Some(measurement) = measurement.as_ref() {
-                display.toggle_on_with_measurement(measurement);
-                critical_section::with(|cs| {
-                    let mut button = ISR_SCREEN_TIMEOUT.borrow_ref_mut(cs);
-                    if let Some(button) = button.as_mut() {
-                        button.schedule(Duration::from_millis(3000)).unwrap();
+            app_state = match app_state {
+                AppState::Initializing => AppState::Initializing,
+                AppState::Idle | AppState::HistoryView => {
+                    if let Some(measurement) = measurement.as_ref() {
+                        display.toggle_on_with_measurement(measurement);
                     }
-                });
-            }
+                    AppState::GeneralViewDebouncing
+                }
+                AppState::GeneralView => {
+                    display.toggle_on_with_history(&co2_history);
+                    AppState::HistoryViewDebouncing
+                }
+                AppState::GeneralViewDebouncing | AppState::HistoryViewDebouncing => {
+                    // reset debounce timer
+                    schedule_app_timer(DEBOUNCE_TIMEOUT);
+                    app_state
+                }
+            };
         }
+
         if get_and_clear_isr_flag(&IS_SENSOR_TIMER_ISR) {
             if sensor.data_ready_status().is_ok_and(|x| x) {
-                measurement = Some(sensor.measurement().unwrap());
-                display.toggle_off();
+                if measurement.is_none() {
+                    app_state = AppState::Idle;
+                    display.toggle_off();
+                }
+                let new_measurement = sensor.measurement().unwrap();
+
+                co2_sum += new_measurement.co2;
+                co2_count += 1;
+                if co2_count >= CO2_HISTORY_INTERVAL {
+                    co2_history.push(co2_sum / (CO2_HISTORY_INTERVAL as u16));
+                    co2_count = 0;
+                    co2_sum = 0;
+                }
+
+                measurement = Some(new_measurement);
             }
         }
-        if get_and_clear_isr_flag(&IS_SCREEN_TIMEOUT_ISR) {
-            display.toggle_off();
+
+        if get_and_clear_isr_flag(&IS_APP_TIMER_ISR) {
+            app_state = match app_state {
+                AppState::Initializing => AppState::Initializing,
+                AppState::Idle => AppState::Idle,
+                AppState::GeneralViewDebouncing => {
+                    schedule_app_timer(SCREEN_TIMEOUT);
+                    AppState::GeneralView
+                }
+                AppState::HistoryViewDebouncing => {
+                    schedule_app_timer(SCREEN_TIMEOUT);
+                    AppState::HistoryView
+                }
+                AppState::GeneralView | AppState::HistoryView => {
+                    display.toggle_off();
+                    AppState::Idle
+                }
+            }
         }
     }
 }
