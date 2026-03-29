@@ -7,11 +7,13 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
+mod block_average;
 mod display;
 mod ring_buffer;
 
 use core::cell::RefCell;
 
+use crate::block_average::BlockAverage;
 use crate::ring_buffer::RingBuffer;
 use critical_section::Mutex;
 use display::Display;
@@ -175,10 +177,8 @@ fn main() -> ! {
 
     let mut app_state = AppState::Initializing;
 
-    const CO2_HISTORY_INTERVAL: usize = 12;
     let mut co2_history = RingBuffer::<u16, 120>::new();
-    let mut co2_count = 0;
-    let mut co2_sum = 0;
+    let mut co2_average = BlockAverage::new(12);
     let mut measurement = None;
 
     loop {
@@ -214,12 +214,8 @@ fn main() -> ! {
                 }
                 let new_measurement = sensor.measurement().unwrap();
 
-                co2_sum += new_measurement.co2;
-                co2_count += 1;
-                if co2_count >= CO2_HISTORY_INTERVAL {
-                    co2_history.push(co2_sum / (CO2_HISTORY_INTERVAL as u16));
-                    co2_count = 0;
-                    co2_sum = 0;
+                if let Some(average) = co2_average.push(new_measurement.co2) {
+                    co2_history.push(average);
                 }
 
                 measurement = Some(new_measurement);

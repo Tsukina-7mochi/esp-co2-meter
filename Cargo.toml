@@ -17,6 +17,7 @@ esp-bootloader-esp-idf = { version = "0.4.0", features = ["esp32c3"] }
 esp-hal = { version = "~1.0", features = ["esp32c3", "unstable"] }
 esp-println = { version = "0.16.1", features = ["esp32c3", "auto"] }
 itoa = "1.0.17"
+num = { version = "0.4.3", default-features = false }
 scd4x = "0.4.1"
 ssd1306 = "0.10.0"
 tinybmp = "0.7.0"
