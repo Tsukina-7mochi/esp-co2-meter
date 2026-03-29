@@ -7,12 +7,14 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
+mod atomic_bool;
 mod block_average;
 mod display;
 mod ring_buffer;
 
 use core::cell::RefCell;
 
+use crate::atomic_bool::MyAtomicBool;
 use crate::block_average::BlockAverage;
 use crate::ring_buffer::RingBuffer;
 use critical_section::Mutex;
@@ -42,22 +44,13 @@ static ISR_SENSOR_TIMER: Mutex<RefCell<Option<PeriodicTimer<'static, Blocking>>>
 static ISR_APP_TIMER: Mutex<RefCell<Option<OneShotTimer<'static, Blocking>>>> =
     Mutex::new(RefCell::new(None));
 
-// use Mutex instead of AtomicBool because ESP32C3 does not support AtomicBool::swap
-static IS_GPIO_ISR: Mutex<RefCell<bool>> = Mutex::new(RefCell::new(false));
-static IS_SENSOR_TIMER_ISR: Mutex<RefCell<bool>> = Mutex::new(RefCell::new(false));
-static IS_APP_TIMER_ISR: Mutex<RefCell<bool>> = Mutex::new(RefCell::new(false));
+// use custom AtomicBool to do things in critical_section
+static IS_BUTTON_ISR: MyAtomicBool = MyAtomicBool::new(false);
+static IS_SENSOR_TIMER_ISR: MyAtomicBool = MyAtomicBool::new(false);
+static IS_APP_TIMER_ISR: MyAtomicBool = MyAtomicBool::new(false);
 
 const DEBOUNCE_TIMEOUT: Duration = Duration::from_millis(300);
 const SCREEN_TIMEOUT: Duration = Duration::from_millis(5000);
-
-fn get_and_clear_isr_flag(flag: &Mutex<RefCell<bool>>) -> bool {
-    critical_section::with(|cs| {
-        let mut flag = flag.borrow_ref_mut(cs);
-        let val = *flag;
-        *flag = false;
-        val
-    })
-}
 
 fn schedule_app_timer(duration: Duration) {
     critical_section::with(|cs| {
@@ -76,11 +69,10 @@ fn gpio_isr() {
             return;
         };
         if !button.is_interrupt_set() {
+            button.clear_interrupt();
             return;
         }
-
-        *IS_GPIO_ISR.borrow_ref_mut(cs) = true;
-
+        IS_BUTTON_ISR.store(true, cs);
         button.clear_interrupt();
     });
 }
@@ -92,9 +84,7 @@ fn sensor_timer_isr() {
         let Some(timer) = timer.as_mut() else {
             return;
         };
-
-        *IS_SENSOR_TIMER_ISR.borrow_ref_mut(cs) = true;
-
+        IS_SENSOR_TIMER_ISR.store(true, cs);
         timer.clear_interrupt();
     });
 }
@@ -106,9 +96,7 @@ fn button_timer_isr() {
         let Some(timer) = timer.as_mut() else {
             return;
         };
-
-        *IS_APP_TIMER_ISR.borrow_ref_mut(cs) = true;
-
+        IS_APP_TIMER_ISR.store(true, cs);
         timer.clear_interrupt();
     });
 }
@@ -185,7 +173,7 @@ fn main() -> ! {
         // Wait for interruption
         unsafe { core::arch::asm!("wfi") }
 
-        if get_and_clear_isr_flag(&IS_GPIO_ISR) {
+        if IS_BUTTON_ISR.swap_in_cs(false) {
             app_state = match app_state {
                 AppState::Initializing => AppState::Initializing,
                 AppState::Idle | AppState::HistoryView => {
@@ -206,7 +194,7 @@ fn main() -> ! {
             };
         }
 
-        if get_and_clear_isr_flag(&IS_SENSOR_TIMER_ISR) {
+        if IS_SENSOR_TIMER_ISR.swap_in_cs(false) {
             if sensor.data_ready_status().is_ok_and(|x| x) {
                 if measurement.is_none() {
                     app_state = AppState::Idle;
@@ -222,7 +210,7 @@ fn main() -> ! {
             }
         }
 
-        if get_and_clear_isr_flag(&IS_APP_TIMER_ISR) {
+        if IS_APP_TIMER_ISR.swap_in_cs(false) {
             app_state = match app_state {
                 AppState::Initializing => AppState::Initializing,
                 AppState::Idle => AppState::Idle,
