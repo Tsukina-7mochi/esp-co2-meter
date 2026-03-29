@@ -1,5 +1,6 @@
 use core::ops::Index;
 
+#[derive(Debug, Clone)]
 pub struct RingBuffer<T, const N: usize> {
     data: [T; N],
     index: usize,
