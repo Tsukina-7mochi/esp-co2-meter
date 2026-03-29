@@ -147,7 +147,7 @@ where
     }
 
     fn draw_initialization_message(&mut self) {
-        let char_style = MonoTextStyle::new(&mono_font::ascii::FONT_6X10, BinaryColor::On);
+        let char_style = MonoTextStyle::new(&mono_font::ascii::FONT_6X12, BinaryColor::On);
         let text_style = TextStyleBuilder::new()
             .alignment(Alignment::Center)
             .baseline(Baseline::Middle)
@@ -236,12 +236,15 @@ where
         T: Index<usize, Output = U>,
         U: Clone + Into<i32>,
     {
-        let rect_style = PrimitiveStyleBuilder::new()
+        let line_style = PrimitiveStyleBuilder::new()
             .stroke_width(1)
             .stroke_color(BinaryColor::On)
             .build();
         Rectangle::new(Point::new(8, 0), Size::new(120, 56))
-            .draw_styled(&rect_style, &mut self.display)
+            .draw_styled(&line_style, &mut self.display)
+            .unwrap();
+        Line::new(Point::new(8, 28), Point::new(128, 28))
+            .draw_styled(&line_style, &mut self.display)
             .unwrap();
 
         Image::new(&IMG_2K, Point::new(0, 0))
@@ -272,7 +275,7 @@ where
                 Point::new(prev_x, 56 - prev_height),
                 Point::new(x, 56 - height),
             )
-            .draw_styled(&rect_style, &mut self.display)
+                .draw_styled(&line_style, &mut self.display)
             .unwrap();
 
             prev_value = value;
