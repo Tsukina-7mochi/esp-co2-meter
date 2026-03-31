@@ -56,6 +56,7 @@ fn schedule_app_timer(duration: Duration) {
     critical_section::with(|cs| {
         let mut timer = ISR_APP_TIMER.borrow_ref_mut(cs);
         if let Some(timer) = timer.as_mut() {
+            timer.stop();
             timer.schedule(duration).unwrap();
         }
     });
