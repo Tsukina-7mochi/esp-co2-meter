@@ -1,9 +1,9 @@
 mod frame_buffer;
+mod images;
 
 use crate::display::frame_buffer::Invertible;
 use core::ops::Index;
 use embedded_graphics::geometry::AnchorX;
-use embedded_graphics::image::ImageRaw;
 use embedded_graphics::primitives::{Line, PrimitiveStyleBuilder, StyledDrawable};
 use embedded_graphics::{
     image::Image,
@@ -16,61 +16,9 @@ use embedded_graphics::{
 use frame_buffer::MyFrameBuffer;
 use scd4x::types::SensorData;
 use ssd1306::{mode::BufferedGraphicsMode, prelude::*, I2CDisplayInterface, Ssd1306};
-use tinybmp::Bmp;
 
 type PhysicalDisplay<I> =
     Ssd1306<I2CInterface<I>, DisplaySize128x64, BufferedGraphicsMode<DisplaySize128x64>>;
-
-const IMG_0: ImageRaw<BinaryColor> = ImageRaw::new(
-    &[
-        0b_111_00000,
-        0b_101_00000,
-        0b_101_00000,
-        0b_101_00000,
-        0b_111_00000,
-    ],
-    3,
-);
-const IMG_1K: ImageRaw<BinaryColor> = ImageRaw::new(
-    &[
-        0b_010_0_101_0,
-        0b_010_0_110_0,
-        0b_010_0_100_0,
-        0b_010_0_110_0,
-        0b_010_0_101_0,
-    ],
-    7,
-);
-const IMG_2K: ImageRaw<BinaryColor> = ImageRaw::new(
-    &[
-        0b_111_0_101_0,
-        0b_001_0_110_0,
-        0b_111_0_100_0,
-        0b_100_0_110_0,
-        0b_111_0_101_0,
-    ],
-    7,
-);
-const IMG_1H: ImageRaw<BinaryColor> = ImageRaw::new(
-    &[
-        0b_010_0_101_0,
-        0b_010_0_101_0,
-        0b_010_0_111_0,
-        0b_010_0_101_0,
-        0b_010_0_101_0,
-    ],
-    7,
-);
-const IMG_2H: ImageRaw<BinaryColor> = ImageRaw::new(
-    &[
-        0b_111_0_101_0,
-        0b_001_0_101_0,
-        0b_111_0_111_0,
-        0b_100_0_101_0,
-        0b_111_0_101_0,
-    ],
-    7,
-);
 
 struct BarChart<T> {
     min: T,
@@ -167,9 +115,7 @@ where
     fn draw_bar_chart(&mut self, measurement: &SensorData) {
         let mut frame_buf = MyFrameBuffer::new();
 
-        let screen_img = include_bytes!("../img/screen.bmp");
-        let screen_img = Bmp::<BinaryColor>::from_slice(screen_img).unwrap();
-        Image::new(&screen_img, Point::zero())
+        Image::new(&*images::BACKGROUND, Point::zero())
             .draw(&mut frame_buf)
             .unwrap();
 
@@ -247,19 +193,19 @@ where
             .draw_styled(&line_style, &mut self.display)
             .unwrap();
 
-        Image::new(&IMG_2K, Point::new(0, 0))
+        Image::new(&images::TEXT_2K, Point::new(0, 0))
             .draw(&mut self.display)
             .unwrap();
-        Image::new(&IMG_1K, Point::new(0, 28))
+        Image::new(&images::TEXT_1K, Point::new(0, 28))
             .draw(&mut self.display)
             .unwrap();
-        Image::new(&IMG_0, Point::new(4, 59))
+        Image::new(&images::TEXT_0, Point::new(4, 59))
             .draw(&mut self.display)
             .unwrap();
-        Image::new(&IMG_1H, Point::new(60, 59))
+        Image::new(&images::TEXT_1H, Point::new(60, 59))
             .draw(&mut self.display)
             .unwrap();
-        Image::new(&IMG_2H, Point::new(121, 59))
+        Image::new(&images::TEXT_2H, Point::new(121, 59))
             .draw(&mut self.display)
             .unwrap();
 
