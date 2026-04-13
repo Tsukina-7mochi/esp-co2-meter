@@ -181,10 +181,12 @@ fn main() -> ! {
                     if let Some(measurement) = measurement.as_ref() {
                         display.toggle_on_with_measurement(measurement);
                     }
+                    schedule_app_timer(DEBOUNCE_TIMEOUT);
                     AppState::GeneralViewDebouncing
                 }
                 AppState::GeneralView => {
                     display.toggle_on_with_history(&co2_history);
+                    schedule_app_timer(DEBOUNCE_TIMEOUT);
                     AppState::HistoryViewDebouncing
                 }
                 AppState::GeneralViewDebouncing | AppState::HistoryViewDebouncing => {
